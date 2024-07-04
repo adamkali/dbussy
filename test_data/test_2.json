@@ -1,0 +1,9 @@
+{
+    "cmd": "selectTop100",
+    "args": [
+        {
+            "key": "table",
+            "val": "users"
+        }
+    ]
+}
