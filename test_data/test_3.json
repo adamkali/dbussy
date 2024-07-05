@@ -1,0 +1,40 @@
+[
+    {
+        "cmd": "ping",
+        "args": null
+    },
+    {
+        "cmd": "selectTop100",
+        "args": [
+            {
+                "key": "table",
+                "val": "users"
+            }
+        ]
+    },
+    {
+        "cmd": "connect",
+        "args": [
+            {
+                "key": "engine",
+                "val": "mssql"
+            },
+            {
+                "key": "hostname",
+                "val": "foo-bar"
+            },
+            {
+                "key": "database",
+                "val": "client"
+            },
+            {
+                "key": "username",
+                "val": "root"
+            },
+            {
+                "key": "password",
+                "val": "@bc123!"
+            }
+        ]
+    }
+]

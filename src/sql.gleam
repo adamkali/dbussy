@@ -1,4 +1,6 @@
 import gleam/option.{type Option, unwrap}
+import gleam/uri
+import errors.{type DbussyError}
 
 pub type Sql {
   None
@@ -42,42 +44,56 @@ pub fn connect_string(
     }
     MSSql -> {
       "mssql://"
-      <> unwrap(username, "")
+      <> uri.percent_encode(unwrap(username, ""))
       <> ":"
-      <> unwrap(password, "")
+      <> uri.percent_encode(unwrap(password, ""))
       <> "@"
-      <> unwrap(hostname, "")
+      <> uri.percent_encode(unwrap(hostname, ""))
       <> "/"
-      <> unwrap(database, "")
+      <> uri.percent_encode(unwrap(database, ""))
     }
     MySql -> {
       "mysql://"
-      <> unwrap(username, "")
+      <> uri.percent_encode(unwrap(username, ""))
       <> ":"
-      <> unwrap(password, "")
+      <> uri.percent_encode(unwrap(password, ""))
       <> "@"
-      <> unwrap(hostname, "")
+      <> uri.percent_encode(unwrap(hostname, ""))
       <> "/"
-      <> unwrap(database, "")
+      <> uri.percent_encode(unwrap(database, ""))
     }
     Postgres -> {
       "postgresql://"
-      <> unwrap(username, "")
+      <> uri.percent_encode(unwrap(username, ""))
       <> ":"
-      <> unwrap(password, "")
+      <> uri.percent_encode(unwrap(password, ""))
       <> "@"
-      <> unwrap(hostname, "")
+      <> uri.percent_encode(unwrap(hostname, ""))
       <> "/"
-      <> unwrap(database, "")
+      <> uri.percent_encode(unwrap(database, ""))
     }
     LibSql -> {
       "libsql://"
-      <> unwrap(database, "")
+      <> uri.percent_encode(unwrap(database, ""))
       <> ".turso.io?authToken="
-      <> unwrap(password, "")
+      <> uri.percent_encode(unwrap(password, ""))
     }
     SqlLite -> {
-      "sqlite:///" <> unwrap(hostname, "")
+      "sqlite:///"
+      <> uri.percent_encode(unwrap(hostname, ""))
     }
   }
+}
+
+//pub fn connect() -> Result()
+
+pub fn from_string(in:String) -> Result(Sql, errors.DbussyError) {
+    case in {
+         "mssql" -> Ok(new_mssql())
+         "libsql" ->   Ok(new_libsql())
+         "mysql" ->    Ok(new_mysql())
+         "sqlite" ->   Ok(new_sqllite())
+         "postgres" -> Ok(new_postgres())
+         _ -> Error(errors.sql_error("Not a recognized engine"))
+    }
 }
