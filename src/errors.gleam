@@ -15,3 +15,5 @@ pub fn rpc_error(msg message: String) -> DbussyError {
 pub fn sql_error(msg message: String) -> DbussyError {
   SqlError(message)
 }
+
+

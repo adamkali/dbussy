@@ -4,24 +4,15 @@
         "args": null
     },
     {
-        "cmd": "selectTop100",
-        "args": [
-            {
-                "key": "table",
-                "val": "users"
-            }
-        ]
-    },
-    {
         "cmd": "connect",
         "args": [
             {
                 "key": "engine",
-                "val": "mssql"
+                "val": "postgres"
             },
             {
                 "key": "hostname",
-                "val": "foo-bar"
+                "val": "localhost"
             },
             {
                 "key": "database",
@@ -33,7 +24,7 @@
             },
             {
                 "key": "password",
-                "val": "@bc123!"
+                "val": "abc123"
             }
         ]
     }

@@ -1,5 +1,4 @@
 import commands
-import gleam/io
 import gleam/bytes_builder
 import gleam/dynamic.{list}
 import gleam/erlang/process
@@ -8,6 +7,7 @@ import gleam/list
 import gleam/option.{None}
 import gleam/otp/actor
 import glisten.{Packet}
+import gleam/io
 
 pub fn main() {
   let assert Ok(_) =

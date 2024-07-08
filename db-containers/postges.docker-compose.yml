@@ -1,0 +1,13 @@
+version: "3.8"  # Specify docker-compose version
+
+services:
+  db:
+    image: postgres:latest  # Use the latest official Postgres image
+    environment:
+      - POSTGRES_USER=root  # Replace with your desired username
+      - POSTGRES_PASSWORD=abc123 # Replace with your desired password
+      - POSTGRES_DB=client # Replace with your desired database name
+    ports:
+      - "5432:5432"  # Map container port 5432 to host port 5432
+    volumes:
+      - ./postgres-seed:/docker-entrypoint-initdb.d  # Mount postgres-seed directory

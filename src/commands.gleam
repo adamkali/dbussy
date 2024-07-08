@@ -8,7 +8,8 @@ import gleam/order.{Eq, Gt, Lt}
 import gleam/string_builder
 import sql
 
-// - [ ] TODO: need to change
+// - [ ] TODO: need to change the CommandError to be a dbussy error to get that error managment at the deserialize error
+// - [ ] and then spin up a new state into the actor
 
 pub type Command {
   NewCommand
@@ -89,8 +90,9 @@ pub fn parse_args(cmd: Command) -> Command {
       )
     }
     CommandError(s) -> CommandError(s)
-    Connect(e, h, d, u, p, _) ->
+    Connect(e, h, d, u, p, _) -> {
       Connect(e, h, d, u, p, sql.connect_string(e, h, d, u, p))
+    }
     _ ->
       CommandError(
         "Could not parse args. Command<"
@@ -207,8 +209,19 @@ pub fn execute_command(
     SelectTop100(_, result_command) -> {
       bytes_builder.from_string(result_command)
     }
-    Connect(_, _, _, _, _, result_command) -> {
-      bytes_builder.from_string(result_command)
+    Connect(s, h, d, u, p, _result_command) -> {
+      let cnx = sql.connect(s, h, d, u, p)
+      case cnx {
+        Ok(connected) -> {
+          case sql.get_schema(connected) {
+            Ok(serialized) -> {
+              bytes_builder.from_string(serialized)
+            }
+            Error(err) -> execute_command(CommandError(err.msg))
+          }
+        }
+        Error(sql_error) -> execute_command(CommandError(sql_error.msg))
+      }
     }
     CommandError(e) -> {
       io.debug(e)
