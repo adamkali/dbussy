@@ -2,9 +2,14 @@ pub type DbussyError {
   DeserializeError(msg: String)
   RPCError(msg: String)
   SqlError(msg: String)
+  SerializeError(msg: String)
 }
 
 pub fn deserialize_error(msg message: String) -> DbussyError {
+  DeserializeError(message)
+}
+
+pub fn serialize_error(msg message: String) -> DbussyError {
   DeserializeError(message)
 }
 

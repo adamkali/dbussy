@@ -1,9 +1,12 @@
 import errors.{type DbussyError}
+import gleam/dict
 import gleam/dynamic
 import gleam/io
 import gleam/json
+import gleam/list
 import gleam/option.{type Option, unwrap}
 import gleam/pgo.{type Connection}
+import gleam/string
 import gleam/uri
 import sql/postgres
 
@@ -15,6 +18,14 @@ pub type Sql {
   PostgresConnected(cnx: Connection)
   SqlLite
   LibSql
+}
+
+pub type ReturnMember {
+  ColSchema(name: String, typeof: String, limit: Int)
+}
+
+pub type Returns {
+  TableSchema(name: String, items: List(ReturnMember))
 }
 
 pub fn new_mssql() -> Sql {
@@ -117,7 +128,6 @@ pub fn connect(
     MSSql -> Error(errors.sql_error("I did not implement this: MSSql"))
     MySql -> Error(errors.sql_error("I did not implement this: MySql"))
     Postgres -> {
-      io.debug("Connect called")
       case
         postgres.connect(
           host: hostname,
@@ -156,13 +166,58 @@ pub fn get_schema(sql engine: Sql) -> Result(String, errors.DbussyError) {
       case postgres.get_schema(cnx) {
         // get the schemea for every row returned
         Ok(returned) -> {
-          let result =
-            json.object([
-              #("count", json.int(returned.count)),
-              #("rows", json.array(returned.rows, json.string)),
-            ])
-            |> json.to_string
-          Ok(result)
+          let new_list =
+            list.try_map(returned.rows, fn(row: String) -> Result(
+              Returns,
+              errors.DbussyError,
+            ) {
+              case postgres.get_schema_table_cols_dynamic(cnx, row) {
+                Ok(returned) -> {
+                  let columns =
+                    list.map(
+                      returned.rows,
+                      fn(r: #(String, String, dynamic.Dynamic)) -> ReturnMember {
+                          io.debug(r)
+                        ColSchema("", "", 9)
+                      },
+                    )
+                  Ok(TableSchema(row, columns))
+                }
+                Error(str) -> {
+                    "table_col_schema" |> io.debug
+                  Error(errors.sql_error(str))
+                }
+              }
+            })
+          let _ = io.debug(new_list)
+          Ok(":)")
+          //case new_list {
+          //  Ok(result) -> {
+          //    let strings: List(String) =
+          //      list.map(result, fn(result_item: Returns) -> String {
+          //        let TableSchema(table_name, cols) = result_item
+          //        json.object([
+          //          #("table", json.string(table_name)),
+          //          #(
+          //            "schema",
+          //            json.array(
+          //              from: cols,
+          //              of: fn(a: ReturnMember) -> json.Json {
+          //                json.object([
+          //                  #("col_name", json.string(a.name)),
+          //                  #("col_type", json.string(a.typeof)),
+          //                  #("col_limit", json.int(a.limit)),
+          //                ])
+          //              },
+          //            ),
+          //          ),
+          //        ])
+          //        |> json.to_string()
+          //      })
+          //    Ok("[\n" <> string.join(strings, ",\n") <> "]")
+          //  }
+          //  Error(errors) -> Error(errors)
+          //}
         }
         Error(s) -> {
           io.debug(s)
@@ -170,7 +225,7 @@ pub fn get_schema(sql engine: Sql) -> Result(String, errors.DbussyError) {
         }
       }
     Postgres -> {
-        Error(errors.sql_error("sql.postgres.connect() was not called"))
+      Error(errors.sql_error("sql.postgres.connect() was not called"))
     }
     _ -> todo
   }
