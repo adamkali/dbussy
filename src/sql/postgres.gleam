@@ -1,4 +1,4 @@
-import gleam/dynamic.{type Dynamic}
+import gleam/dynamic.{type DecodeError, type Dynamic}
 import gleam/int
 import gleam/io
 import gleam/list
@@ -47,7 +47,7 @@ AND table_schema NOT IN ('pg_catalog', 'information_schema');"
 pub fn get_schema_table_cols(
   cnx: Connection,
   table table_name: String,
-) -> Result(pgo.Returned(#(String, String, Int)), String) {
+) -> Result(pgo.Returned(#(String, String, Option(Int))), String) {
   let query =
     "SELECT column_name, data_type, character_maximum_length
 FROM information_schema.columns
@@ -58,9 +58,9 @@ WHERE table_name = $1;"
       cnx,
       [pgo.text(table_name)],
       dynamic.tuple3(
-        dynamic.element(at: 0, of: dynamic.string),
-        dynamic.element(at: 1, of: dynamic.string),
-        dynamic.element(at: 2, of: dynamic.int),
+        dynamic.string,
+        dynamic.string,
+        dynamic.optional(dynamic.int),
       ),
     )
   {
@@ -72,7 +72,7 @@ WHERE table_name = $1;"
 pub fn get_schema_table_cols_dynamic(
   cnx: Connection,
   table table_name: String,
-) -> Result(pgo.Returned(#(String, String, dynamic.Dynamic)), String) {
+) -> Result(pgo.Returned(#(String, String, Option(Int))), String) {
   let query =
     "SELECT column_name, data_type, character_maximum_length
 FROM information_schema.columns
@@ -83,9 +83,9 @@ WHERE table_name = $1;"
       cnx,
       [pgo.text(table_name)],
       dynamic.tuple3(
-        dynamic.element(at: 0, of: dynamic.string),
-        dynamic.element(at: 1, of: dynamic.string),
-        dynamic.element(at: 2, of: dynamic.dynamic),
+        dynamic.string,
+        dynamic.string,
+        dynamic.optional(dynamic.int),
       ),
     )
   {
@@ -115,4 +115,42 @@ pub fn serialize_query_error(e: QueryError) -> String {
     pgo.PostgresqlError(code, name, message) ->
       "[" <> code <> "] " <> name <> ": " <> message
   }
+}
+
+pub fn select_top_100(
+  cnx: Connection,
+  table table_name: String,
+) -> Result(pgo.Returned(dynamic.Dynamic), String) {
+  let query = "select *
+from " <> table_name <> "
+limit 100;"
+  case pgo.execute(query, cnx, [], dynamic.dynamic) {
+    Ok(r) -> Ok(r)
+    Error(err) -> Error(serialize_query_error(err))
+  }
+}
+
+pub fn parse_type(col_type: String) -> Result(Types, String) {
+  case col_type {
+    "integer" -> Ok(Int)
+    "character" <> _ -> Ok(String)
+    "bit" <> _ -> Ok(Bool)
+    _ -> Error("I cannot do anything for this")
+  }
+}
+
+pub type Types {
+  String
+  Int
+  Bool
+}
+
+pub fn dynamax(cols: List(#(String, Types))) -> Nil {
+  todo
+}
+
+pub type PostgresColumnDeserializer {
+  PostgresColumnDeserializer(
+    de: fn(Dynamic) -> Result(Dynamic, List(DecodeError)),
+  )
 }

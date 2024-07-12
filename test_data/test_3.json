@@ -1,31 +1,42 @@
 [
-    {
-        "cmd": "ping",
-        "args": null
-    },
-    {
-        "cmd": "connect",
-        "args": [
-            {
-                "key": "engine",
-                "val": "postgres"
-            },
-            {
-                "key": "hostname",
-                "val": "localhost"
-            },
-            {
-                "key": "database",
-                "val": "client"
-            },
-            {
-                "key": "username",
-                "val": "root"
-            },
-            {
-                "key": "password",
-                "val": "abc123"
-            }
-        ]
-    }
+  {
+    "cmd": "ping",
+    "args": null,
+    "col_defs": null
+  },
+  {
+    "cmd": "connect",
+    "args": [
+      {
+        "key": "engine",
+        "val": "postgres"
+      },
+      {
+        "key": "hostname",
+        "val": "localhost"
+      },
+      {
+        "key": "database",
+        "val": "client"
+      },
+      {
+        "key": "username",
+        "val": "root"
+      },
+      {
+        "key": "password",
+        "val": "abc123"
+      }
+    ],
+    "col_defs": null
+  },
+  {
+    "cmd": "selectTop100",
+    "args": [
+      {
+        "key": "table",
+        "val": "users"
+      }
+    ]
+  }
 ]

@@ -2,32 +2,37 @@ import commands
 import gleam/bytes_builder
 import gleam/dynamic.{list}
 import gleam/erlang/process
+import gleam/io
 import gleam/json
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{type Option, None}
 import gleam/otp/actor
 import glisten.{Packet}
-import gleam/io
+import sql.{type Cnx}
 
 pub fn main() {
   let assert Ok(_) =
-    glisten.handler(fn(_conn) { #(Nil, None) }, fn(msg, state, conn) {
+    glisten.handler(fn(_conn) { #(None, None) }, fn(msg, state: Option(Cnx), conn) {
       let assert Packet(msg) = msg
-      let assert Ok(_) = glisten.send(conn, deserialize(msg))
-      actor.continue(state)
+      io.debug(msg)
+      let consumed = consume(msg, state)
+      let assert Ok(_) = glisten.send(conn, consumed.0)
+      actor.continue(consumed.1)
     })
     |> glisten.serve(8987)
   process.sleep_forever()
 }
 
-
-pub fn deserialize(msg: BitArray) -> bytes_builder.BytesBuilder {
+pub fn consume(
+  msg: BitArray,
+  state: Option(Cnx)
+) -> #(bytes_builder.BytesBuilder, option.Option(sql.Cnx)) {
   let assert Ok(command) = json.decode_bits(msg, commands.command_request_de())
-  let commands.CommandRequest(cmd, args) = command
+  let commands.CommandRequest(cmd, args, defs) = command
   case cmd {
     "ping" -> commands.execute_command(cmd: commands.Ping)
     "selectTop100" -> {
-      commands.new_select_top_100()
+      commands.new_select_top_100(state, defs)
       |> commands.compile(option.unwrap(args, or: list.new()))
       |> commands.parse_args()
       |> commands.execute_command()
@@ -38,6 +43,9 @@ pub fn deserialize(msg: BitArray) -> bytes_builder.BytesBuilder {
       |> commands.parse_args()
       |> commands.execute_command()
     }
-    _ -> commands.execute_command(cmd: commands.CommandError("Oops :)"))
+    _ -> {
+      commands.execute_command(cmd: commands.CommandError("Oops :)"))
+    }
   }
 }
+

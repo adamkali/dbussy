@@ -1,14 +1,13 @@
 import errors.{type DbussyError}
-import gleam/dict
-import gleam/dynamic
+import gleam/dynamic.{type Dynamic}
 import gleam/io
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, unwrap}
 import gleam/pgo.{type Connection}
-import gleam/string
+import gleam/string_builder.{type StringBuilder}
 import gleam/uri
-import sql/postgres
+import sql/postgres.{type Types as PT, PostgresColumnDeserializer}
 
 pub type Sql {
   None
@@ -20,8 +19,12 @@ pub type Sql {
   LibSql
 }
 
+pub type Cnx {
+  PostgesCnx(cnx: Connection)
+}
+
 pub type ReturnMember {
-  ColSchema(name: String, typeof: String, limit: Int)
+  ColSchema(name: String, typeof: String, limit: Option(Int))
 }
 
 pub type Returns {
@@ -46,6 +49,16 @@ pub fn new_sqllite() -> Sql {
 
 pub fn new_libsql() -> Sql {
   LibSql
+}
+
+pub type ColumnDeserializer {
+  PostgresColumnDeserializer(
+    de: fn(Dynamic) -> Result(Dynamic, dynamic.DecodeError),
+  )
+}
+
+pub type Types {
+  PostgresTypes(t: PT)
 }
 
 pub fn connect_string(
@@ -160,7 +173,7 @@ pub fn from_string(in: String) -> Result(Sql, errors.DbussyError) {
   }
 }
 
-pub fn get_schema(sql engine: Sql) -> Result(String, errors.DbussyError) {
+pub fn get_schema(sql engine: Sql) -> Result(StringBuilder, errors.DbussyError) {
   case engine {
     PostgresConnected(cnx) ->
       case postgres.get_schema(cnx) {
@@ -176,48 +189,50 @@ pub fn get_schema(sql engine: Sql) -> Result(String, errors.DbussyError) {
                   let columns =
                     list.map(
                       returned.rows,
-                      fn(r: #(String, String, dynamic.Dynamic)) -> ReturnMember {
-                          io.debug(r)
-                        ColSchema("", "", 9)
+                      fn(r: #(String, String, Option(Int))) -> ReturnMember {
+                        ColSchema(r.0, r.1, r.2)
                       },
                     )
                   Ok(TableSchema(row, columns))
                 }
                 Error(str) -> {
-                    "table_col_schema" |> io.debug
+                  "table_col_schema" |> io.debug
                   Error(errors.sql_error(str))
                 }
               }
             })
-          let _ = io.debug(new_list)
-          Ok(":)")
-          //case new_list {
-          //  Ok(result) -> {
-          //    let strings: List(String) =
-          //      list.map(result, fn(result_item: Returns) -> String {
-          //        let TableSchema(table_name, cols) = result_item
-          //        json.object([
-          //          #("table", json.string(table_name)),
-          //          #(
-          //            "schema",
-          //            json.array(
-          //              from: cols,
-          //              of: fn(a: ReturnMember) -> json.Json {
-          //                json.object([
-          //                  #("col_name", json.string(a.name)),
-          //                  #("col_type", json.string(a.typeof)),
-          //                  #("col_limit", json.int(a.limit)),
-          //                ])
-          //              },
-          //            ),
-          //          ),
-          //        ])
-          //        |> json.to_string()
-          //      })
-          //    Ok("[\n" <> string.join(strings, ",\n") <> "]")
-          //  }
-          //  Error(errors) -> Error(errors)
-          //}
+          case new_list {
+            Ok(result) -> {
+              Ok(
+                json.object([
+                  #(
+                    "response",
+                    json.array(result, fn(result_item: Returns) -> json.Json {
+                      let TableSchema(table_name, cols) = result_item
+                      json.object([
+                        #("table", json.string(table_name)),
+                        #(
+                          "schema",
+                          json.array(
+                            from: cols,
+                            of: fn(a: ReturnMember) -> json.Json {
+                              json.object([
+                                #("col_name", json.string(a.name)),
+                                #("col_type", json.string(a.typeof)),
+                                #("col_limit", json.nullable(a.limit, json.int)),
+                              ])
+                            },
+                          ),
+                        ),
+                      ])
+                    }),
+                  ),
+                ])
+                |> json.to_string_builder(),
+              )
+            }
+            Error(errors) -> Error(errors)
+          }
         }
         Error(s) -> {
           io.debug(s)
@@ -228,5 +243,64 @@ pub fn get_schema(sql engine: Sql) -> Result(String, errors.DbussyError) {
       Error(errors.sql_error("sql.postgres.connect() was not called"))
     }
     _ -> todo
+  }
+}
+
+pub fn column(
+  sql: Sql,
+  name col_name: String,
+  typeof col_type: String,
+) -> Result(#(String, Types), DbussyError) {
+  case sql {
+    PostgresConnected(_) -> {
+      case postgres.parse_type(col_type) {
+        Ok(ty) -> Ok(#(col_name, PostgresTypes(ty)))
+        Error(e) -> Error(errors.rpc_error(e))
+      }
+    }
+    _ -> Error(errors.rpc_error("i dont know man"))
+  }
+}
+
+pub fn select_top_100(
+  sql engine: Sql,
+  table table_name: String,
+  cols col_defs: List(#(String, String)),
+) -> Result(StringBuilder, errors.DbussyError) {
+  case engine {
+    PostgresConnected(cnx) -> {
+// # make this work at all costs
+      let col_defs_parsed =
+        list.try_map(col_defs, fn(col: #(String, String)) -> Result(
+          #(String, Types),
+          errors.DbussyError,
+        ) {
+            column(engine, col.0, col.1)
+        })
+      case postgres.select_top_100(cnx, table: table_name) {
+        Ok(result_core) -> {
+          io.debug(result_core)
+          Ok(string_builder.from_string("hi"))
+        }
+        Error(error) -> Error(errors.sql_error(error))
+      }
+    }
+    _ -> panic as "You do not have the right"
+  }
+}
+
+pub fn sql_to_cnx(sql sql_config: Sql) -> Result(Cnx, DbussyError) {
+  case sql_config {
+    PostgresConnected(cnx) -> Ok(PostgesCnx(cnx: cnx))
+    _ ->
+      Error(errors.rpc_error(
+        "Internal error occured passing around the connection",
+      ))
+  }
+}
+
+pub fn cnx_to_sql(cnx: Cnx) -> Result(Sql, DbussyError) {
+  case cnx {
+    PostgesCnx(cnx) -> Ok(PostgresConnected(cnx))
   }
 }

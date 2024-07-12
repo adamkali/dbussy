@@ -1,9 +1,11 @@
+import errors
 import gleam/bytes_builder
 import gleam/dynamic.{type Dynamic, field, list, optional, string}
 import gleam/int
 import gleam/io
+import gleam/json
 import gleam/list
-import gleam/option.{type Option, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/order.{Eq, Gt, Lt}
 import gleam/string_builder
 import sql
@@ -22,12 +24,48 @@ pub type Command {
     password: Option(String),
     result_command: String,
   )
-  SelectTop100(table: String, result_command: String)
+  SelectTop100(
+    engine: sql.Sql,
+    table: String,
+    cols: ColDefs,
+    result_command: String,
+  )
   CommandError(String)
 }
 
-pub fn new_select_top_100() -> Command {
-  SelectTop100(table: "", result_command: "")
+pub type ColDefs {
+  ColDefs(cols: List(ColDef))
+}
+
+pub type ColDef {
+  ColDef(col_name: String, col_type: String)
+}
+
+pub fn new_select_top_100(
+  cnx: Option(sql.Cnx),
+  defs: Option(List(ColDef)),
+) -> Command {
+  case cnx {
+    Some(cnx) -> {
+      case sql.cnx_to_sql(cnx) {
+        Ok(cnx) ->
+          case defs {
+            Some(defs) ->
+              SelectTop100(
+                engine: cnx,
+                table: "",
+                cols: ColDefs(defs),
+                result_command: "",
+              )
+            None -> panic as "Col defs must be past to do this"
+          }
+        Error(error) -> panic as error.msg
+      }
+    }
+    None -> {
+      panic as "You are not connected to a server. You do not have the right oh you do not have the right."
+    }
+  }
 }
 
 pub fn new_connect() -> Command {
@@ -36,11 +74,11 @@ pub fn new_connect() -> Command {
 
 pub fn stringify_cmd(cmd: Command) -> String {
   case cmd {
-    Connect(_, _, _, _, _, _) -> "Connect"
-    SelectTop100(_t, _) -> "SelectTop100"
-    NewCommand -> "NewCommand"
-    Ping -> "Ping"
-    CommandError(_s) -> "CommandError"
+    Connect(..) -> "connect"
+    SelectTop100(..) -> "selectTop100"
+    NewCommand -> "newCommand"
+    Ping -> "ping"
+    CommandError(_s) -> "commandError"
   }
 }
 
@@ -49,7 +87,11 @@ pub fn new_command() -> Command {
 }
 
 pub type CommandRequest {
-  CommandRequest(cmd: String, args: Option(List(CommandRequestArgs)))
+  CommandRequest(
+    cmd: String,
+    args: Option(List(CommandRequestArgs)),
+    defs: Option(List(ColDef)),
+  )
 }
 
 pub type CommandRequestArgs {
@@ -58,7 +100,7 @@ pub type CommandRequestArgs {
 
 pub fn command_request_de() -> fn(Dynamic) ->
   Result(CommandRequest, List(dynamic.DecodeError)) {
-  dynamic.decode2(
+  dynamic.decode3(
     CommandRequest,
     field("cmd", of: string),
     field(
@@ -71,17 +113,28 @@ pub fn command_request_de() -> fn(Dynamic) ->
         )),
       ),
     ),
+    field(
+      "col_defs",
+      optional(
+        dynamic.list(dynamic.decode2(
+          ColDef,
+          field("col_name", dynamic.string),
+          field("col_type", dynamic.string),
+        )),
+      ),
+    ),
   )
 }
 
 pub fn parse_args(cmd: Command) -> Command {
   case cmd {
-    SelectTop100(table, _) -> {
+    SelectTop100(sql, table, defs, ..) -> {
       let proposed_command = "SELECT * FROM"
       let post_proposed_command = "LIMIT 100"
-      io.debug(table)
       SelectTop100(
+        sql,
         table: table,
+        cols: defs,
         result_command: proposed_command
           <> " "
           <> table
@@ -104,13 +157,13 @@ pub fn parse_args(cmd: Command) -> Command {
 
 pub fn compile(cmd: Command, args: List(CommandRequestArgs)) -> Command {
   case cmd {
-    SelectTop100(_, _) -> {
+    SelectTop100(sql_connection, _table, defs, ..) -> {
       case list.length(args) {
         1 -> {
           let assert Ok(argument) = list.first(args)
           case argument.key {
             "table" -> {
-              SelectTop100(argument.val, "")
+              SelectTop100(sql_connection, argument.val, defs, "")
             }
             _ ->
               CommandError(
@@ -198,24 +251,50 @@ pub fn compile_unknown_connect_key(
 
 pub fn execute_command(
   cmd parsed_command: Command,
-) -> bytes_builder.BytesBuilder {
+) -> #(bytes_builder.BytesBuilder, Option(sql.Cnx)) {
   case parsed_command {
     NewCommand -> {
       panic as "This should never happen"
     }
     Ping -> {
-      bytes_builder.from_string("Pong")
+      let response =
+        json.object([#("response", json.array(["pong"], json.string))])
+        |> json.to_string_builder()
+      #(bytes_builder.from_string_builder(response), option.None)
     }
-    SelectTop100(_, result_command) -> {
-      bytes_builder.from_string(result_command)
+    SelectTop100(sql, table, _, _) -> {
+      let sql_response = sql.select_top_100(sql, table)
+      case sql_response {
+        Ok(response) -> {
+          let response =
+            json.object([
+              #(
+                "response",
+                json.array([response |> string_builder.to_string], json.string),
+              ),
+            ])
+            |> json.to_string_builder()
+          #(bytes_builder.from_string_builder(response), option.None)
+        }
+        Error(sql_error) -> execute_command(CommandError(sql_error.msg))
+      }
     }
     Connect(s, h, d, u, p, _result_command) -> {
-      let cnx = sql.connect(s, h, d, u, p)
-      case cnx {
+      let ctx = sql.connect(s, h, d, u, p)
+      case ctx {
         Ok(connected) -> {
           case sql.get_schema(connected) {
             Ok(serialized) -> {
-              bytes_builder.from_string(serialized)
+              let cnx = sql.sql_to_cnx(connected)
+              case cnx {
+                Ok(cnx) -> {
+                  #(
+                    bytes_builder.from_string_builder(serialized),
+                    option.Some(cnx),
+                  )
+                }
+                Error(error) -> execute_command(CommandError(error.msg))
+              }
             }
             Error(err) -> execute_command(CommandError(err.msg))
           }
@@ -225,7 +304,7 @@ pub fn execute_command(
     }
     CommandError(e) -> {
       io.debug(e)
-      bytes_builder.from_string("[Error]\t" <> e)
+      #(bytes_builder.from_string("[Error]\t" <> e), option.None)
     }
   }
 }
